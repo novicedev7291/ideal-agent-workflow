@@ -1,0 +1,14 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: pg-vector-db
+    environment:
+      POSTGRES_USER: testusr
+      POSTGRES_PASSWORD: testusrP#5s
+      POSTGRES_DB: test_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - /home/kuldeep/temp/docker/data/pgvector:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+
