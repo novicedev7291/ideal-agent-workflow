@@ -1,0 +1,15 @@
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #f5f5f5;
+}
+
+.app > * {
+  flex-shrink: 0;
+}
+
+.app .chat-area {
+  flex: 1;
+  overflow: hidden;
+}
