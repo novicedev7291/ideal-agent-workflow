@@ -87,3 +87,4 @@ dist
 tmp/
 temp/%
 
+backend/data/edited/*.png

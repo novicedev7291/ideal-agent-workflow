@@ -4,13 +4,27 @@ import threading
 from typing import Dict, Optional, Tuple, List, TypedDict
 from uuid import uuid4
 
+class SearchResult(TypedDict):
+    content: str
+    img_urls: List[str]
+
+class Message(TypedDict):
+    role: str
+    content: str
 
 class AgentState(TypedDict):
-    search_results: List[str] = []
-    messages: List[str] = []
+    search_results: List[SearchResult]
+    messages: List[Message]
     task: str
     summary: str
     user_input: str
+    view_summary: str | None
+    original_img: str
+    edited_img: Optional[str]
+    image_mime: str | None
+    need_user_clarification: bool | None
+    error: str | None
+    agent_query: str | None
 
 class StateManager:
     def __init__(self, ttl: int = 30):

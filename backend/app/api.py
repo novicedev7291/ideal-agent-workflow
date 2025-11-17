@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import json
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -171,7 +172,8 @@ async def chat_stream(request: ChatRequest):
                     session_id, 
                     request.message
                 ):
-                    yield f'{{"role": "assistant", "content": "{token}"}}\n\n'
+                    t_result = json.loads(token)
+                    yield f'{{"role": "assistant", "content": "{t_result['content']}", "mimeType": "{t_result['mime']}"}}\n\n'
                 
                 yield '{"role": "assistant", "content": "END"}\n\n'
                 

@@ -1,4 +1,7 @@
 import React from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { User, Bot, Loader } from 'lucide-react'
 import './Message.css'
 
@@ -30,10 +33,29 @@ const Message = ({ message, isStreaming }) => {
                 <span>Thinking...</span>
               </div>
             ) : (
-              text
-            )}
-            {text && text.endsWith(' ') === false && sender === 'assistant' && (
-              <span className="cursor">|</span>
+                <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            code({ node, inline, className, children, ...props }) {
+                              const match = /language-(\w+)/.exec(className || '')
+                              return !inline && match ? (
+                                <SyntaxHighlighter
+                                  language={match[1]}
+                                  PreTag="div"
+                                  {...props}
+                                >
+                                  {String(children).replace(/\n$/, '')}
+                                </SyntaxHighlighter>
+                              ) : (
+                                <code className={className} {...props}>
+                                  {children}
+                                </code>
+                              )
+                            }
+                          }}
+                        >
+                      {text}
+                </ReactMarkdown>
             )}
           </div>
           <div className="message-time">

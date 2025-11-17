@@ -15,6 +15,7 @@ class Config:
     DB_PASS = os.environ.get('DB_PASS')
     DB_SCHEMA = os.environ.get('DB_SCHEMA')
     OPEN_AI_KEY = os.environ.get('OPEN_AI_KEY')
+    GOOGLE_AI_KEY = os.environ.get('GOOGLE_AI_KEY')
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
 

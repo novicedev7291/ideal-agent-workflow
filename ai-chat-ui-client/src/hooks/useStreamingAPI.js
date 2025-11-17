@@ -3,6 +3,64 @@ import { useState, useCallback } from 'react'
 const useStreamingAPI = () => {
   const [isLoading, setIsLoading] = useState(false)
 
+  const isRenderableMarkdown = (text) => {
+    const codeBlockMatches = text.match(/```/g)
+    if (codeBlockMatches && codeBlockMatches.length % 2 !== 0) {
+      return false
+    }
+
+    const inlineCodeMatches = text.match(/`/g)
+    if (inlineCodeMatches && inlineCodeMatches.length % 2 !== 0) {
+      return false
+    }
+
+    const boldMatches = text.match(/\*\*/g)
+    if (boldMatches && boldMatches.length % 2 !== 0) {
+      return false
+    }
+
+    return true
+  }
+
+  const bufferAndRender = (accumulatedText, buffer, onStreamUpdate) => {
+    const combinedText = buffer + accumulatedText
+    
+    const lastSentenceEnd = Math.max(
+      combinedText.lastIndexOf('. '),
+      combinedText.lastIndexOf('.\n'),
+      combinedText.lastIndexOf('!\n'),
+      combinedText.lastIndexOf('?\n')
+    )
+
+    if (lastSentenceEnd > 0) {
+      const textToRender = combinedText.substring(0, lastSentenceEnd + 1)
+      const remainingBuffer = combinedText.substring(lastSentenceEnd + 1)
+
+      if (isRenderableMarkdown(textToRender)) {
+        onStreamUpdate(textToRender)
+        return remainingBuffer
+      }
+    }
+
+    if (combinedText.includes('```')) {
+      const codeBlockEnd = combinedText.lastIndexOf('```\n')
+      if (codeBlockEnd > 0 && combinedText.indexOf('```') < codeBlockEnd) {
+        const textToRender = combinedText.substring(0, codeBlockEnd + 4)
+        if (isRenderableMarkdown(textToRender)) {
+          onStreamUpdate(textToRender)
+          return combinedText.substring(codeBlockEnd + 4)
+        }
+      }
+    }
+
+    if (combinedText.length > 100) {
+      onStreamUpdate(combinedText)
+      return ''
+    }
+
+    return combinedText
+  }
+
   const sendMessage = useCallback(async ({ message, sessionId } , onStreamUpdate) => {
     setIsLoading(true)
     
@@ -35,11 +93,20 @@ const useStreamingAPI = () => {
       }
 
       let accumulatedText = ''
+      let buffer = ''
+
+      let lastUpdateTime = Date.now()
+      const UPDATE_INTVL = 100 //ms
       
       while (true) {
         const { done, value } = await reader.read()
         
-        if (done) break
+        if (done) {
+          if(buffer) {
+            onStreamUpdate(accumulatedText + buffer)
+          }
+          break
+        }
         
         const chunk = decoder.decode(value)
         const lines = chunk.split('\n')
@@ -49,14 +116,27 @@ const useStreamingAPI = () => {
           
           try {
             const data = JSON.parse(line)
-            if (data.role && data.role === 'assistant' && data.content && (data.content !== 'START' && data.content !== 'END')) {
-              accumulatedText += data.content
-              onStreamUpdate(accumulatedText)
+            if (data.role && data.role === 'assistant' 
+                && data.content 
+                && (data.content !== 'START' && data.content !== 'END')) {
+              buffer += data.content
+
+              const currentTime = Date.now()
+              const shouldUpdate = currentTime - lastUpdateTime >= UPDATE_INTVL
+
+              if (shouldUpdate && buffer.length > 0) {
+                const testText  = accumulatedText + buffer
+
+                if (isRenderableMarkdown(testText) || buffer.length > 150) {
+                  accumulatedText = testText
+                  onStreamUpdate(accumulatedText)
+                  buffer = ''
+                  lastUpdateTime = currentTime
+                }
+              }
             }
           } catch (e) {
-            // If not JSON, treat the entire line as text
-            accumulatedText += line
-            onStreamUpdate(accumulatedText)
+            console.warn('Failed to parse line', line, e)
           }
         }
       }
