@@ -6,7 +6,7 @@ const Header = ({ onNewChat }) => {
   return (
     <header className="header">
       <div className="header-content">
-        <h1 className="header-title">AI Chat</h1>
+        <h1 className="header-title">IDEAL</h1>
         <button 
           className="new-chat-button"
           onClick={onNewChat}

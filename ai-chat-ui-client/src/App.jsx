@@ -28,7 +28,8 @@ function App() {
       id: Date.now(),
       text: messageText,
       sender: 'user',
-      timestamp: new Date()
+      timestamp: new Date(),
+      mimeType: 'text/plain'
     }
     
     setMessages(prev => [...prev, userMessage])
@@ -37,17 +38,19 @@ function App() {
       id: Date.now() + 1,
       text: '',
       sender: 'assistant',
-      timestamp: new Date()
+      timestamp: new Date(), 
+      imageData: '',
+      mimeType: ''
     }
     
     setMessages(prev => [...prev, assistantMessage])
 
     try {
-      await sendMessage({ 'message': messageText, sessionId }, (streamedText) => {
+      await sendMessage({ 'message': messageText, 'sessionId': sessionId }, (streamedText, imageData, mimeType) => {
         setMessages(prev => 
           prev.map(msg => 
             msg.id === assistantMessage.id 
-              ? { ...msg, text: streamedText }
+              ? { ...msg, text: streamedText || msg.text, imageData: imageData || msg.imageData, mimeType: mimeType || msg.mimeType }
               : msg
           )
         )

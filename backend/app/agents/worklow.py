@@ -26,6 +26,10 @@ class IntentSchema(BaseModel):
     application: str = Field(description="The application for which screen needs to be changed/added")
     error: Optional[str] = None
 
+class FeedbackSchema(BaseModel):
+    yes_no: bool = Field(description='Whether to proceed or not', default=False)
+    refined_query: Optional[str] = Field(description='Any refined input provided to be considered')
+
 
 class AgentWorklow:
     def __init__(self, kb: KnowledgeBase, state_manager: StateManager):
@@ -56,12 +60,18 @@ class AgentWorklow:
         workflow.add_node("edit_image", self._edit_image_node)
         workflow.add_node("generate_response", self._generate_response_node)
         workflow.add_node("send_response", self._send_response_node)
+        workflow.add_node("feedback_loop", self._feedback_loop_node)
         
         workflow.set_entry_point("analyze_intent")
         
         workflow.add_conditional_edges(
             "analyze_intent",
             self._route_after_intent
+        )
+
+        workflow.add_conditional_edges(
+            "feedback_loop",
+            self._route_after_feedback
         )
         
         workflow.add_edge("search_knowledge_base", "summarise_view")
@@ -98,6 +108,57 @@ Screen Context:
         
         return state
 
+    
+    def _route_after_feedback(self, state: AgentState) -> str:
+        if state['error']:
+            return 'generate_response'
+
+        if state['redo_edit']:
+            return 'edit_image'
+
+        return 'generate_response'
+
+
+    def _feedback_loop_node(self, state: AgentState) -> AgentState:
+        try:
+            user_input = state.get('user_input')
+
+            system_instructions = """You are a query analyser assistant.
+
+Return your response as a valid JSON object with these exact fields:
+- yes_no: User has provided yes or no answer, boolean field.
+- refined_query: Any query additonally user has provided to process further, string field.
+"""
+            instructions = [
+                SystemMessage(content=system_instructions),
+                HumanMessage(content=user_input)
+            ]
+
+            resp = self.general_llm.invoke(instructions)
+
+            try:
+                feedback_dict = json.loads(resp.content)
+
+                feedback = FeedbackSchema(**feedback_dict)
+
+                if not feedback.yes_no and feedback.refined_query:
+                    state['task'] = feedback.refined_query
+                else:
+                    state['redo_edit'] = True
+
+                state['need_user_clarification'] = False
+                state['agent_query'] = None
+                state['messages'].append({'role': 'user', 'content': user_input})
+
+                return state
+            except Exception as ex:
+                logger.error('Error occurred while parsing feedback', ex)
+                state['error'] = str(ex)
+        except Exception as e:
+            logger.error('Error occurred while providing feedback', e)
+            state['error'] = str(e)
+        return state
+
 
     def _edit_image_node(self, state:  AgentState) -> AgentState:
         logger.debug('Inside _edit_image_node')
@@ -127,9 +188,7 @@ Screen Context:
             logger.debug(f'Edited image is being saved to folder : {final_location}')
 
             for part in resp.parts:
-                if part.text is not None:
-                    logger.info(f'Gemini model resp : {part.text}')
-                elif part.inline_data is not None:
+                if part.inline_data is not None:
                     image_mime = part.inline_data.mime_type
                     image_part = part.as_image()
                     image_part.save(final_location)
@@ -138,6 +197,7 @@ Screen Context:
                     state['image_mime'] = image_mime
                     state['need_user_clarification'] = True
 
+            state['redo_edit'] = False
         except Exception as e:
             logger.error('Error while editing image', e)
 
@@ -155,28 +215,32 @@ Return your response as a valid JSON object with these exact fields:
 
 If any information is missing or unclear, make a reasonable inference based on context.
 """
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=state['user_input'])
-            ]
-            
-            # TODO: Uncomment this here.
-            #response = self.llm.invoke(messages)
-            response = {
-                'task': 'Add a button to view product uploaded image',
-                'screen': 'Product Page',
-                'application': 'Order Management System'
-            }
+            if state.get('redo_edit'):
+                state['edited_img'] = None
+                return state
 
-            logger.debug(f'LLM response : {response}')
+            #TODO: check need-user-clarification toggling
+            if state.get('need_user_clarification'):
+                if not state.get('edited_img'):
+                    state['need_user_clarification'] = False
+                    return state
+            
+            # messages = [
+            #     SystemMessage(content=system_prompt),
+            #     HumanMessage(content=state['user_input'])
+            # ]
+            
+            #response = self.general_llm.invoke(messages)
+
+            #logger.debug(f'LLM response : {response.content}')
             
             try:
-                #intent_data = json.loads(response)
-                intent = IntentSchema(**response)
+                # intent_data = json.loads(response.content)
+                # intent = IntentSchema(**intent_data)
                 
-                state['task'] = intent.task
+                state['task'] = state['user_input']
                 
-                logger.info(f"Intent extracted: task={intent.task}, screen={intent.screen}, app={intent.application}")
+                # logger.info(f"Intent extracted: task={intent.task}, screen={intent.screen}, app={intent.application}")
                 
             except (json.JSONDecodeError, ValidationError) as e:
                 logger.warning(f"Failed to parse intent: {e}")
@@ -192,6 +256,10 @@ If any information is missing or unclear, make a reasonable inference based on c
         logger.debug(f'Inside _route_after_intent with state : {state}')
         if state.get('error'):
             return 'send_response'
+        if state.get('redo_edit'):
+            return 'edit_image'
+        if state.get('need_user_clarification'):
+            return 'generate_response'
         return 'search_knowledge_base'
 
     def _search_kb_node(self, state: AgentState) -> AgentState:
@@ -219,6 +287,9 @@ If any information is missing or unclear, make a reasonable inference based on c
 
         if state.get('need_user_clarification'):
             state['agent_query'] = 'Below is the modified screen as per your query, do you want me to proceed with the changes?'
+        else:
+            state['need_user_clarification'] = False
+            state['agent_query'] = None
 
         return state
 
@@ -285,17 +356,18 @@ If any information is missing or unclear, make a reasonable inference based on c
         
         workflow_state: AgentState = {
             'user_input': user_input,
-            'task': '',
-            'summary': '',
-            'search_results': [],
-            'messages': [],
-            'edited_img': '',
-            'original_img': '',
-            'view_summary': '',
-            'image_mime': '',
-            'need_user_clarification': False,
-            'error': None,
-            'agent_query': None
+            'task': state.get('task'),
+            'summary': state.get('summary'),
+            'search_results': state.get('search_results'),
+            'messages': state.get('messages'),
+            'edited_img': state.get('edited_img'),
+            'original_img': state.get('original_img'),
+            'view_summary': state.get('view_summary'),
+            'image_mime': state.get('image_mime'),
+            'need_user_clarification': state.get('need_user_clarification') if False else True,
+            'error': state.get('error'),
+            'agent_query': state.get('agent_query'),
+            'redo_edit': state.get('redo_edit')
         }
         
         try:
@@ -304,7 +376,7 @@ If any information is missing or unclear, make a reasonable inference based on c
 
             async for event in self.workflow.astream(workflow_state):
                 node_name = list(event.keys())[0]
-                node_state = event[node_name]
+                node_state: AgentState = event[node_name]
                 current_state = node_state
 
                 if node_name == 'generate_response':
@@ -317,9 +389,18 @@ If any information is missing or unclear, make a reasonable inference based on c
                     yield f"\nError: {node_state['error']}"
                     return
 
+            logger.debug(f'Current state : {current_state is not None}')
             if current_state:
                 state['messages'].append({'role': 'user', 'content': user_input})
-                state['messages'].extend([{'role': 'assistant', 'content': r.content} for r in full_response])
+                assistant_msgs = [json.loads(r) for r in full_response]
+
+                if assistant_msgs:
+                    for m in assistant_msgs:
+                        if m.get('mime') == 'image/png':
+                            m['content'] = '[image-data-noout]'
+                    
+                    state['messages'].append({'role': 'assistant', 'content': '\n'.join([m['content'] for m in assistant_msgs])})
+
                 state['task'] = current_state.get('task', '')
                 state['search_results'] = [s for s in current_state.get('search_results', [])]
                 state['user_input'] = current_state.get('user_input')
@@ -328,6 +409,9 @@ If any information is missing or unclear, make a reasonable inference based on c
                 state['image_mime'] = current_state.get('image_mime')
                 state['view_summary'] = current_state.get('view_summary')
                 state['need_user_clarification'] = current_state.get('need_user_clarification')
+                state['error'] = current_state.get('error')
+                state['redo_edit'] = current_state.get('redo_edit')
+
                 self.sm.update_state(session_id, state)
 
         except Exception as e:
@@ -361,8 +445,6 @@ If any information is missing or unclear, make a reasonable inference based on c
         """
         logger.debug('Inside _stream_generate_response')
 
-        logger.debug(f'Edit image response : {state.get('edited_img')} and need clarification flag : {state.get('need_user_clarification')}')
-
         if state.get('edited_img') and state.get('need_user_clarification'):
             try:
                 yield f'{{"content": "{state.get('agent_query')}", "mime": "text/plain"}}'
@@ -375,14 +457,19 @@ If any information is missing or unclear, make a reasonable inference based on c
             return
         else:
             kb_context = self._build_kb_context(state['search_results'])
+
+            conversations = '\n'.join([f'{m["role"]} : {m["content"]}' for m in state.get('messages')])
             
             system_prompt = f"""You are an AI assistant helping with screen and application management.
 
 Knowledge Base Context:
 {kb_context}
 
+Conversation History:
+{conversations}
+
 Based on the user's task and the relevant information from the knowledge base, provide a helpful and detailed response.
-Suggest specific changes or improvements that align with the user's requirements."""
+Suggest specific changes or improvements that align with the user's requirements. Also, check conversation history while providing suggestions."""
 
             messages = [
                 SystemMessage(content=system_prompt),
@@ -392,7 +479,7 @@ Suggest specific changes or improvements that align with the user's requirements
             try:
                 async for chunk in self.general_llm.astream(messages):
                     if hasattr(chunk, 'content') and chunk.content:
-                        yield f'{{"content": "{chunk.token}", "mime": "text/plain"}}'
+                        yield f'{{"content": "{chunk.content}", "mime": "text/plain"}}'
                         
                 logger.debug('Completed _stream_generate_response')
             except Exception as e:

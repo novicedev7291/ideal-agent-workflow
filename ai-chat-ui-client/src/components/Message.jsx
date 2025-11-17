@@ -1,18 +1,28 @@
-import React from 'react'
+import React, { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { User, Bot, Loader } from 'lucide-react'
+import { User, Bot, Loader, ZoomIn } from 'lucide-react'
+import Lightbox from 'yet-another-react-lightbox'
+import 'yet-another-react-lightbox/styles.css'
 import './Message.css'
 
 const Message = ({ message, isStreaming }) => {
-  const { text, sender, timestamp } = message
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false) 
+
+  const { text, sender, timestamp, imageData, mimeType } = message
 
   const formatTime = (date) => {
     return new Intl.DateTimeFormat('en-US', {
       hour: '2-digit',
       minute: '2-digit'
     }).format(date)
+  }
+
+  let imageUrl = null
+
+  if (imageData) {
+    imageUrl = `data:${mimeType};base64,${imageData}`
   }
 
   return (
@@ -58,11 +68,44 @@ const Message = ({ message, isStreaming }) => {
                 </ReactMarkdown>
             )}
           </div>
+          {imageUrl && (
+            <div className="message-image-container">
+              <div 
+                className="message-image-thumbnail"
+                onClick={() => setIsLightboxOpen(true)}
+                role="button"
+                tabIndex={0}
+                onKeyPress={(e) => e.key === 'Enter' && setIsLightboxOpen(true)}
+              >
+                <img 
+                  src={imageUrl} 
+                  alt="Attached image" 
+                  className="thumbnail-image"
+                />
+                <div className="thumbnail-overlay">
+                  <ZoomIn size={24} />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="message-time">
             {formatTime(timestamp)}
           </div>
         </div>
       </div>
+
+      {imageUrl && (
+        <Lightbox
+          open={isLightboxOpen}
+          close={() => setIsLightboxOpen(false)}
+          slides={[{ src: imageUrl }]}
+          render={{
+            buttonPrev: () => null,
+            buttonNext: () => null,
+          }}
+        />
+      )}
     </div>
   )
 }

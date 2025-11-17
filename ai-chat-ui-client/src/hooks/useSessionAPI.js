@@ -17,7 +17,8 @@ const useSessionAPI = () => {
                 return
             }
 
-            setSessionId(resp.json()['session_id'])
+            const data = await resp.json()
+            setSessionId(data['session_id'])
             console.info('Session creation successful ' )
         } catch(error) {
             console.error("Session creation error", error)

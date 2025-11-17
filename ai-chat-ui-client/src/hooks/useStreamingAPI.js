@@ -63,14 +63,14 @@ const useStreamingAPI = () => {
 
   const sendMessage = useCallback(async ({ message, sessionId } , onStreamUpdate) => {
     setIsLoading(true)
+
+    console.log(`Request with session_id : ${sessionId}`)
     
     try {
       const API_BASE_URL = 'http://localhost:8000'
       const API_ENDPOINT = '/chat/stream'
       
       const reqBody = { "message": message, "session_id": sessionId }
-
-      console.info('Sending req : ' + JSON.stringify(reqBody))
 
       const response = await fetch(API_BASE_URL + API_ENDPOINT, {
         method: 'POST',
@@ -84,7 +84,6 @@ const useStreamingAPI = () => {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      // Handle streaming response
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
       
@@ -94,6 +93,7 @@ const useStreamingAPI = () => {
 
       let accumulatedText = ''
       let buffer = ''
+      let lineBuffer = ''
 
       let lastUpdateTime = Date.now()
       const UPDATE_INTVL = 100 //ms
@@ -102,14 +102,31 @@ const useStreamingAPI = () => {
         const { done, value } = await reader.read()
         
         if (done) {
+          if (lineBuffer.trim()) {
+            try {
+              const data = JSON.parse(lineBuffer)
+              if (data.role && data.role === 'assistant' && data.content) {
+                if (data.mimeType === 'image/png') {
+                  onStreamUpdate('', data.content, data.mimeType)
+                } else if (data.content !== 'START' && data.content !== 'END') {
+                  buffer += data.content
+                }
+              }
+            } catch (e) {
+              console.warn('Failed to parse remaining line', lineBuffer, e)
+            }
+          }
           if(buffer) {
-            onStreamUpdate(accumulatedText + buffer)
+            onStreamUpdate(accumulatedText + buffer, null, null)
           }
           break
         }
         
-        const chunk = decoder.decode(value)
-        const lines = chunk.split('\n')
+        const chunk = decoder.decode(value, { stream: true })
+        lineBuffer += chunk
+
+        const lines = lineBuffer.split('\n')
+        lineBuffer = lines.pop() || ''
         
         for (const line of lines) {
           if (line.trim() === '') continue
@@ -119,6 +136,13 @@ const useStreamingAPI = () => {
             if (data.role && data.role === 'assistant' 
                 && data.content 
                 && (data.content !== 'START' && data.content !== 'END')) {
+
+              //TODO: Remove hardcoding png
+              if (data.mimeType == 'image/png') {
+                onStreamUpdate('', data.content, data.mimeType)
+                continue
+              }
+
               buffer += data.content
 
               const currentTime = Date.now()
@@ -129,7 +153,7 @@ const useStreamingAPI = () => {
 
                 if (isRenderableMarkdown(testText) || buffer.length > 150) {
                   accumulatedText = testText
-                  onStreamUpdate(accumulatedText)
+                  onStreamUpdate(accumulatedText, null, data.mimeType)
                   buffer = ''
                   lastUpdateTime = currentTime
                 }

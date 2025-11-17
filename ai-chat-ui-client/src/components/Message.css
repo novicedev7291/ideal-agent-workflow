@@ -107,6 +107,51 @@
   border-bottom-left-radius: 0.25rem;
 }
 
+.message-image-container {
+  margin: 12px 0;
+}
+
+.message-image-thumbnail {
+  position: relative;
+  display: inline-block;
+  max-width: 300px;
+  cursor: pointer;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: transform 0.2s ease;
+}
+
+.message-image-thumbnail:hover {
+  transform: scale(1.02);
+}
+
+.thumbnail-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+}
+
+.thumbnail-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  color: white;
+}
+
+.message-image-thumbnail:hover .thumbnail-overlay {
+  opacity: 1;
+}
+
+
 .message-time {
   font-size: 0.75rem;
   color: #666;

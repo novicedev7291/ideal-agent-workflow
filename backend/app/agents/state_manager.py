@@ -4,6 +4,10 @@ import threading
 from typing import Dict, Optional, Tuple, List, TypedDict
 from uuid import uuid4
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 class SearchResult(TypedDict):
     content: str
     img_urls: List[str]
@@ -18,13 +22,14 @@ class AgentState(TypedDict):
     task: str
     summary: str
     user_input: str
-    view_summary: str | None
+    view_summary: Optional[str]
     original_img: str
     edited_img: Optional[str]
-    image_mime: str | None
-    need_user_clarification: bool | None
-    error: str | None
-    agent_query: str | None
+    image_mime: Optional[str]
+    need_user_clarification: bool 
+    error: Optional[str]
+    agent_query: Optional[str]
+    redo_edit: bool
 
 class StateManager:
     def __init__(self, ttl: int = 30):
@@ -53,6 +58,7 @@ class StateManager:
 
 
     def update_state(self, session_id: str, n_state: AgentState):
+        logger.info(f'Updating session_id {session_id} with {n_state.get('messages') is not None}')
         with self._lock:
             self._states[session_id] = (n_state, datetime.now())
 

@@ -17,8 +17,9 @@ const ChatArea = ({ messages, isLoading }) => {
       <div className="chat-container" ref={chatContainerRef}>
         {messages.length === 0 ? (
           <div className="empty-state">
-            <h2>Welcome to AI Chat</h2>
-            <p>Start a conversation by typing a message below.</p>
+            <h2>Welcome to IDEAL</h2>
+            <p>Start a conversation by typing below.</p>
+            <pre>For example, `I want to add a SKU input text field to Product Page on Order Management System.`</pre>
           </div>
         ) : (
           <div className="messages-list">
