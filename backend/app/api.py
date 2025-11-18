@@ -173,13 +173,13 @@ async def chat_stream(request: ChatRequest):
                     request.message
                 ):
                     t_result = json.loads(token)
-                    yield f'{{"role": "assistant", "content": "{t_result['content']}", "mimeType": "{t_result['mime']}"}}\n\n'
+                    yield json.dumps({"role": "assistant", "content": t_result['content'], "mimeType": t_result['mime']})+'\n\n'
                 
                 yield '{"role": "assistant", "content": "END"}\n\n'
                 
             except Exception as e:
                 logger.error(f"Error in stream generation: {e}")
-                yield f'{{"role": "assistant", "content": "{e}"}}\n\n'
+                yield json.dumps({"role": "assistant", "content": str(e)}) + '\n\n'
         
         return StreamingResponse(
             generate_stream(),
