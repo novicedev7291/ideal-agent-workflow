@@ -121,6 +121,9 @@ Screen Context:
 
     def _feedback_loop_node(self, state: AgentState) -> AgentState:
         try:
+            # Since, must have reached here only when user feedback is already asked!
+            state['need_user_clarification'] = False
+
             user_input = state.get('user_input')
 
             system_instructions = """You are a query analyser assistant.
@@ -141,12 +144,13 @@ Return your response as a valid JSON object with these exact fields:
 
                 feedback = FeedbackSchema(**feedback_dict)
 
-                if not feedback.yes_no and feedback.refined_query:
-                    state['task'] = feedback.refined_query
-                else:
+                if not feedback.yes_no:
                     state['redo_edit'] = True
+                    state['edited_img'] = None
 
-                state['need_user_clarification'] = False
+                if feedback.refined_query:
+                    state['task'] = feedback.refined_query
+
                 state['agent_query'] = None
                 state['messages'].append({'role': 'user', 'content': user_input})
 
@@ -215,33 +219,11 @@ Return your response as a valid JSON object with these exact fields:
 
 If any information is missing or unclear, make a reasonable inference based on context.
 """
-            if state.get('redo_edit'):
-                state['edited_img'] = None
-                return state
-
-            #TODO: check need-user-clarification toggling
             if state.get('need_user_clarification'):
-                if not state.get('edited_img'):
-                    state['need_user_clarification'] = False
                     return state
             
-            # messages = [
-            #     SystemMessage(content=system_prompt),
-            #     HumanMessage(content=state['user_input'])
-            # ]
-            
-            #response = self.general_llm.invoke(messages)
-
-            #logger.debug(f'LLM response : {response.content}')
-            
             try:
-                # intent_data = json.loads(response.content)
-                # intent = IntentSchema(**intent_data)
-                
                 state['task'] = state['user_input']
-                
-                # logger.info(f"Intent extracted: task={intent.task}, screen={intent.screen}, app={intent.application}")
-                
             except (json.JSONDecodeError, ValidationError) as e:
                 logger.warning(f"Failed to parse intent: {e}")
                 state['error'] = "Could not understand the request. Please provide task, screen, and application details."
@@ -256,10 +238,8 @@ If any information is missing or unclear, make a reasonable inference based on c
         logger.debug(f'Inside _route_after_intent with state : {state}')
         if state.get('error'):
             return 'send_response'
-        if state.get('redo_edit'):
-            return 'edit_image'
         if state.get('need_user_clarification'):
-            return 'generate_response'
+            return 'feedback_loop'
         return 'search_knowledge_base'
 
     def _search_kb_node(self, state: AgentState) -> AgentState:
@@ -288,7 +268,6 @@ If any information is missing or unclear, make a reasonable inference based on c
         if state.get('need_user_clarification'):
             state['agent_query'] = 'Below is the modified screen as per your query, do you want me to proceed with the changes?'
         else:
-            state['need_user_clarification'] = False
             state['agent_query'] = None
 
         return state
@@ -364,8 +343,8 @@ If any information is missing or unclear, make a reasonable inference based on c
             'original_img': state.get('original_img'),
             'view_summary': state.get('view_summary'),
             'image_mime': state.get('image_mime'),
-            'need_user_clarification': state.get('need_user_clarification') if False else True,
-            'error': state.get('error'),
+            'need_user_clarification': state.get('need_user_clarification'),
+            'error': None, # Reset error every time
             'agent_query': state.get('agent_query'),
             'redo_edit': state.get('redo_edit')
         }
@@ -381,6 +360,7 @@ If any information is missing or unclear, make a reasonable inference based on c
 
                 if node_name == 'generate_response':
                     async for token in self._stream_generate_response(node_state):
+                        logger.debug(f'returning token : {token}')
                         full_response.append(token)
 
                         yield token
@@ -447,12 +427,12 @@ If any information is missing or unclear, make a reasonable inference based on c
 
         if state.get('edited_img') and state.get('need_user_clarification'):
             try:
-                yield f'{{"content": "{state.get('agent_query')}", "mime": "text/plain"}}'
+                yield json.dumps({"content": state.get('agent_query'), "mime": "text/plain"})
                 img_loc = state.get('edited_img')
                 img_b64_details = self._image_to_base64_with_details(img_loc)
-                yield f'{{"content": "{img_b64_details.get('content')}", "mime": "{img_b64_details.get('mime_type')}"}}'
+                yield json.dumps({"content": img_b64_details.get('content'), "mime": img_b64_details.get('mime_type')})
             except Exception as e:
-                yield f'{{"content": "Error generating response: {str(e)}", "mime": "text/plain"}}'
+                yield json.dumps({"content": f"Error generating response: {str(e)}", "mime": "text/plain"})
             
             return
         else:
@@ -473,18 +453,18 @@ Suggest specific changes or improvements that align with the user's requirements
 
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content=state['user_input'])
+                HumanMessage(content=state['task'])
             ]
         
             try:
                 async for chunk in self.general_llm.astream(messages):
                     if hasattr(chunk, 'content') and chunk.content:
-                        yield f'{{"content": "{chunk.content}", "mime": "text/plain"}}'
+                        yield json.dumps({"content": chunk.content, "mime": "text/plain"})
                         
                 logger.debug('Completed _stream_generate_response')
             except Exception as e:
                 logger.error(f"Error streaming from OpenAI: {e}")
-                yield f'{{"content": "Error generating response: {str(e)}", "mime": "text/plain"}}'
+                yield json.dumps({"content": f"Error generating response: {str(e)}", "mime": "text/plain"})
 
 
     def _generate_final_response(self, state: AgentState) -> str:
