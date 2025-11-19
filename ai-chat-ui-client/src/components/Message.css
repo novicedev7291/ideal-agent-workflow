@@ -34,12 +34,12 @@
 }
 
 .user-message .message-avatar {
-  background-color: #007bff;
+  background-color: #006193;
   color: white;
 }
 
 .assistant-message .message-avatar {
-  background-color: #28a745;
+  background-color: #82C823;
   color: white;
 }
 
@@ -95,7 +95,7 @@
   border-left: 3px solid #ccc;
 }
 .user-message .message-text {
-  background-color: #007bff;
+  background-color: #006193;
   color: white;
   border-bottom-right-radius: 0.25rem;
 }

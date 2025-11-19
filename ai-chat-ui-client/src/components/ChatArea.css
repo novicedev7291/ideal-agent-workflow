@@ -42,11 +42,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
 
 .empty-state h2 {
   margin-bottom: 0.5rem;
-  color: #333;
+  color: #006193;
 }
 
 .empty-state p {
-  color: #666;
+  color: #979DA6;
 }
 
 .messages-list {
