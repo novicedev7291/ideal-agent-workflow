@@ -6,7 +6,14 @@ const Header = ({ onNewChat }) => {
   return (
     <header className="header">
       <div className="header-content">
-        <h1 className="header-title">IDEAL</h1>
+        <div className="header-brand">
+          <img
+            src="/fil_intl.svg"
+            alt="FIL Logo"
+            className="header-logo"
+          />
+          <h1 className="header-title">IDEAL</h1>
+        </div>
         <button 
           className="new-chat-button"
           onClick={onNewChat}

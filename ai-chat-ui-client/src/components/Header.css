@@ -14,10 +14,22 @@
   align-items: center;
 }
 
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
 .header-title {
   font-size: 1.5rem;
   font-weight: 600;
-  color: #333;
+  color: #006193;
   margin: 0;
 }
 
@@ -26,7 +38,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  background-color: #007bff;
+  background-color: #006193;
   color: white;
   border: none;
   border-radius: 8px;

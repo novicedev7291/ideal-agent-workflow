@@ -19,7 +19,6 @@ const ChatArea = ({ messages, isLoading }) => {
           <div className="empty-state">
             <h2>Welcome to IDEAL</h2>
             <p>Start a conversation by typing below.</p>
-            <pre>For example, `I want to add a SKU input text field to Product Page on Order Management System.`</pre>
           </div>
         ) : (
           <div className="messages-list">
