@@ -16,7 +16,6 @@ logger = get_logger(__name__)
 
 @dataclass
 class ImageInfo:
-    id: int
     url: str
 
 @dataclass
@@ -27,8 +26,8 @@ class Screen:
     imgs: List[ImageInfo]
 
 class KnowledgeBase:
-    def __init__(self, screen_repo: ScreenService):
-        self.repo = screen_repo
+    def __init__(self, screen_svc: ScreenService):
+        self.service = screen_svc
         self.openai = OpenAI(api_key=config.OPEN_AI_KEY)
 
 
@@ -62,7 +61,7 @@ class KnowledgeBase:
                     embedding=n_embeddings
                 )
 
-                self.repo.save(screen)
+                self.service.save(screen)
                 
         except Exception as e:
             logger.error(f'Error occurred while ingesting', e)
@@ -82,15 +81,20 @@ class KnowledgeBase:
 
                 query_embedding = self.__normalize(resp.data.pop().embedding)
 
-                db_results = self.repo.find_by_similarity(query_embedding)
+                db_results = self.service.find_by_similarity(query_embedding)
+
+                #TODO: tweak distance if results are not satisfactory
+                filtered_results = [r for r in db_results if r.distance < 0.50]
+
+                filtered_results.sort(key=lambda x: x.distance)
 
                 results = []
-                for r in db_results:
+                for r in filtered_results:
                     results.append(Screen(
                         id=r.id,
                         name=r.name,
                         content=r.details,
-                        imgs=[ImageInfo(id=i.id, url=i.img_url) for i in r.imgs]
+                        imgs=[ImageInfo(url=url) for url in r.imgs],
                     ))
 
                 logger.debug(f'Results from DB : {len(results)}')

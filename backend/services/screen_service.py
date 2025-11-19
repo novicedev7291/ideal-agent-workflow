@@ -1,8 +1,8 @@
-import os
-
+from collections import defaultdict
 from typing import List
+from dataclasses import dataclass
 
-from sqlalchemy import ForeignKey, create_engine, Column, Integer, String, JSON, DateTime, select, text
+from sqlalchemy import ForeignKey, Column, Integer, String, JSON, DateTime, select, text
 from sqlalchemy.orm import Session, DeclarativeBase, mapped_column, relationship, Mapped, joinedload
 from pgvector.sqlalchemy import Vector
 
@@ -10,7 +10,6 @@ from app.core.logging import get_logger
 from app.core.pg import pg_engine
 
 logger = get_logger(__name__)
-
 
 class BaseModel(DeclarativeBase):
     pass
@@ -33,6 +32,14 @@ class ImageModel(BaseModel):
     img_url = Column(String)
     metadata_field = Column(JSON, name='metadata')
     created_at = Column(DateTime)
+
+@dataclass
+class ScreenProjection:
+    id: int
+    name: str
+    details: str
+    distance: float
+    imgs: List[str]
 
 class ScreenService:
     def __init__(self):
@@ -77,12 +84,45 @@ class ScreenService:
                 session.rollback()
                 raise e
 
-    def find_by_similarity(self, query_embedding: List[float]) -> List[ScreenModel]:
+    def find_by_similarity(self, query_embedding: List[float]) -> List[ScreenProjection]:
         with Session(pg_engine) as session:
             try:
-                results = session.scalars(select(ScreenModel).options(joinedload(ScreenModel.imgs)).order_by(ScreenModel.embedding.cosine_distance(query_embedding)).limit(2)).unique().all()
+                distance_col = (ScreenModel.embedding.cosine_distance(query_embedding)).label('distance')
 
-                return [r for r in results]
+                query = select(
+                    ScreenModel.id,
+                    ScreenModel.name,
+                    ScreenModel.details,
+                    distance_col
+                ).order_by(
+                    ScreenModel.embedding.cosine_distance(query_embedding)
+                ).limit(3)
+
+                results = session.execute(query)
+
+                projections = [ScreenProjection(id=r.id, name=r.name, details=r.details, distance=r.distance, imgs=[]) for r in results]
+
+                screen_dict = {}
+
+                for p in projections:
+                    screen_dict[p.id] = p
+
+                image_query = select(ImageModel.screen_id, ImageModel.img_url).where(ImageModel.screen_id.in_(screen_dict.keys())).order_by(ImageModel.screen_id)
+
+                imgs_results = session.execute(image_query)
+
+                imgs_for_screen = defaultdict(list)
+
+                for img_result in imgs_results:
+                    imgs_for_screen[img_result.screen_id].append(img_result.img_url)
+
+                final_projections = []
+
+                for id, p in screen_dict.items():
+                    p.imgs = imgs_for_screen[id]
+                    final_projections.append(p)
+
+                return final_projections
             except Exception as e:
                 logger.error('Exception occurred while querying', e)
             

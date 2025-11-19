@@ -40,7 +40,8 @@ class AgentWorklow:
             model="gpt-4o-mini",
             api_key=lambda: config.OPEN_AI_KEY if config.OPEN_AI_KEY else 'default-value',
             streaming=True,
-            temperature=0.7
+            temperature=0.7,
+            timeout=60.0
         )
 
         self.image_llm = genai.Client(
@@ -87,17 +88,20 @@ class AgentWorklow:
     def _summarise_view(self, state: AgentState) -> AgentState:
         logger.debug('Inside _summarise_view')
         try:
+            if not state['search_results']:
+                return state
+
             context = self._build_kb_context(state.get('search_results'))
-            system_prompt = f"""You are summary assistance.
-Given is the elaborative screen context about description, features etc.
 
-Screen Context:
+            system_prompt = f"""You are a helpful assistant, who can summarise the screen given its features and details.
+Given below the screen details. Provide suggestion for user query.
+
+Screen Details:
 {context}
-
 """
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content='Provide a summary under 300 words to describe the screen')
+                HumanMessage(content='Provide summary for the screen in such a way that one can visualise as it might be in reality. Summary must be under 200 words')
             ]
             response = self.general_llm.invoke(messages)
 
@@ -167,6 +171,9 @@ Return your response as a valid JSON object with these exact fields:
     def _edit_image_node(self, state:  AgentState) -> AgentState:
         logger.debug('Inside _edit_image_node')
         try:
+            if not state['original_img']:
+                return state
+
             view_summary = state['view_summary']
             
             prompts = (
@@ -209,21 +216,28 @@ Return your response as a valid JSON object with these exact fields:
 
     def _analyze_intent_node(self, state: AgentState) -> AgentState:
         try:
-            system_prompt = """You are an intent extraction assistant. 
-Extract the task, screen, and application from the user's request.
-
-Return your response as a valid JSON object with these exact fields:
-- task: The task user wants to perform
-- screen: The screen name or identifier
-- application: The application name
-
-If any information is missing or unclear, make a reasonable inference based on context.
-"""
             if state.get('need_user_clarification'):
                     return state
             
+            system_prompt = (
+                'You are a helpful assistant, who refines the user query into a task'
+                'The task should be refined in a manner that it MUST encompass 3 important attributes as below:'
+                '- High level action'
+                '- Screen pr Page on which action required'
+                '- Application name or context'
+                ''
+                'Suggestion MUST be one liner, without explanation.'
+                'IF query DOES NOT specify above attributes, SUGGEST THE QUERY AS IT IS.'
+            )
             try:
-                state['task'] = state['user_input']
+                messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=state['user_input'])
+                ]
+
+                resp = self.general_llm.invoke(messages)
+
+                state['task'] = resp.content
             except (json.JSONDecodeError, ValidationError) as e:
                 logger.warning(f"Failed to parse intent: {e}")
                 state['error'] = "Could not understand the request. Please provide task, screen, and application details."
@@ -246,9 +260,10 @@ If any information is missing or unclear, make a reasonable inference based on c
         logger.info(f"Searching knowledge base for task: {state['task']}")
         
         try:
-            search_query = f"{state['task']}"
-            
-            results = self.kb.search_screens(search_query)
+            results = self.kb.search_screens(state['task'])
+
+            if not results:
+                return state
             
             state['search_results'] = [SearchResult(content=s.content, img_urls=[img.url for img in s.imgs]) for s in results]
 
@@ -440,16 +455,19 @@ If any information is missing or unclear, make a reasonable inference based on c
 
             conversations = '\n'.join([f'{m["role"]} : {m["content"]}' for m in state.get('messages')])
             
-            system_prompt = f"""You are an AI assistant helping with screen and application management.
-
-Knowledge Base Context:
-{kb_context}
-
-Conversation History:
-{conversations}
-
-Based on the user's task and the relevant information from the knowledge base, provide a helpful and detailed response.
-Suggest specific changes or improvements that align with the user's requirements. Also, check conversation history while providing suggestions."""
+            system_prompt = (
+                "You are an AI assistant helping user with ideation, develop, evaluate & learning in Software Development lifecycle (SDLC)."
+                f"""Application Knowledge Base:
+                {kb_context}
+                """
+                f"""Conversatios:
+                {conversations}
+                """
+                ""
+                "Provide a complete spec, covering all aspects of SDLC based on user's instruction."
+                "The spec MUST adhere to best practices of SDLC and clear for user to follow and implement."
+                "In absence of relevant information regarding user instruction, make best effort to guess and suggest."
+            )
 
             messages = [
                 SystemMessage(content=system_prompt),

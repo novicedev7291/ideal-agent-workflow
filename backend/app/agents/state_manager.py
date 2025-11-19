@@ -20,10 +20,10 @@ class AgentState(TypedDict):
     search_results: List[SearchResult]
     messages: List[Message]
     task: str
-    summary: str
+    summary: Optional[str]
     user_input: str
     view_summary: Optional[str]
-    original_img: str
+    original_img: Optional[str]
     edited_img: Optional[str]
     image_mime: Optional[str]
     need_user_clarification: bool 
@@ -41,7 +41,22 @@ class StateManager:
         session_id = str(uuid4())
 
         with self._lock:
-            self._states[session_id] = (AgentState(search_results = [], messages = [], task='', summary=''), datetime.now())
+            self._states[session_id] = (
+                {
+                    'search_results': [], 
+                    'messages': [], 
+                    'task': '', 
+                    'user_input': '',
+                    'summary': None, 
+                    'view_summary': None,
+                    'original_img': None,
+                    'edited_img': None,
+                    'image_mime': None,
+                    'redo_edit': False, 
+                    'need_user_clarification': False,
+                    'error': None,
+                    'agent_query': None
+                }, datetime.now())
 
         return session_id
 

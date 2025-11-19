@@ -4,7 +4,7 @@ from services.screen_service import ScreenService
 
 def start_ingesting():
     screen_repo = ScreenService()
-    kb = KnowledgeBase(screen_repo=screen_repo)
+    kb = KnowledgeBase(screen_svc=screen_repo)
 
     kb.ingest_screen(
         title='Home Dashboard',
